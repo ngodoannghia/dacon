@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 
 def train():
     # Paramater
-    epochs = 100
+    epochs = 2
     lr = 1e-4
     
     # Device
@@ -25,7 +25,7 @@ def train():
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     
     # Init dataset    
-    df_train = pd.read_csv("data/train_10_image.csv")[:100]
+    df_train = pd.read_csv("data/train_10_image.csv")
     df_test = pd.read_csv("data/test_image.csv")
     
     X_train, X_val = train_test_split(df_train, test_size=0.1, random_state=42)
@@ -42,10 +42,10 @@ def train():
     test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
     
     max_score = -1
-    for epoch in tqdm(range(epochs)):
+    for epoch in range(epochs):
         model.train()
         
-        for imgs, targets in train_loader:
+        for imgs, targets in tqdm(train_loader):
             imgs, targets = imgs.to(device), targets.to(device)
             
             optimizer.zero_grad()
