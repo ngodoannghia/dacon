@@ -8,6 +8,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 import numpy as np
 from tqdm import tqdm
+from src.utils import create_feature
+from sklearn.preprocessing import StandardScaler, RobustScaler
 
 def read_data(path):
     train = pd.read_csv(path)
@@ -21,9 +23,10 @@ def train():
     print(device)
     
     # Paramater
-    epochs = 20
-    path_train = "data/train_10_image.csv"
-    path_test = "data/test.csv"
+    epochs = 50
+    path_train = "data/data_split_val/train_image.csv"
+    path_val = "data/data_split_val/val_image.csv"
+    path_test = "data/test_image.csv"
     
     # Init model
     model = Join_ChemBert_EfficientNet()
@@ -31,36 +34,41 @@ def train():
     
     # Read dataset
     df_train = read_data(path_train)
+    df_val = read_data(path_val)
     df_test = read_data(path_test)
     
-    X_train, X_val = train_test_split(df_train, test_size=0.1, random_state=42)
+    list_feature = []
+    for s in tqdm(df_train.Smiles):
+        list_feature.append(create_feature(s))
     
-    X_train.reset_index(inplace=True)
-    X_val.reset_index(inplace=True)
+    scaler = RobustScaler()
+    scaler.fit(list_feature)
     
-    train_dataset = SMILESDataset(X_train, model.chembert.tokenizer, max_len=128)
-    val_dataset = SMILESDataset(X_val, model.chembert.tokenizer, max_len=128)
-    test_dataset = SMILESDataset(df_test, model.chembert.tokenizer, max_len=128, mode='test')
+    train_dataset = SMILESDataset(df_train, model.chembert.tokenizer, scaler=scaler, max_len=128)
+    val_dataset = SMILESDataset(df_val, model.chembert.tokenizer, scaler=scaler, max_len=128)
+    test_dataset = SMILESDataset(df_test, model.chembert.tokenizer, scaler=scaler, max_len=128, mode='test')
     
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
     
     # Optimize
-    optimizer = torch.optim.AdamW(model.parameters(), lr=4e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5, weight_decay=0.1)
     
     # Training
     max_score = -1
     for epoch in range(epochs):
+        print("Epoch: ", epoch)
         model.train()
         for batch in tqdm(train_loader):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             img = batch['image'].to(device)
             targets = batch['targets'].to(device)
+            features = batch['feature'].to(device)
 
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, img=img)
-            loss = model.criterion(outputs.squeeze(), targets)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, img=img, feature=features)
+            loss = model.criterion(outputs.reshape(-1), targets)
             
             optimizer.zero_grad()
             loss.backward()
@@ -77,25 +85,31 @@ def train():
                 attention_mask = batch['attention_mask'].to(device)
                 img = batch['image'].to(device)
                 targets = batch['targets'].to(device)
+                features = batch['feature'].to(device)
 
-                outputs = model(input_ids=input_ids, attention_mask=attention_mask, img=img)
-                loss = model.criterion(outputs.squeeze(), targets)
+                outputs = model(input_ids=input_ids, attention_mask=attention_mask, img=img, feature=features)
+
+                loss = model.criterion(outputs.reshape(-1), targets)
+
+                assert outputs.reshape(-1).shape == targets.shape
 
                 total_loss += loss.item()
 
-                true_values.extend(targets.detach().cpu().numpy())
-                pred_values.extend(outputs.squeeze().detach().cpu().numpy())
+                true_values += targets.detach().cpu().tolist()
+                pred_values += outputs.reshape(-1).detach().cpu().tolist()
         
+
         true_values = np.array(true_values)
         pred_values = np.array(pred_values)
         
+
         print("True value: ", true_values)
         print("Predict value: ", pred_values)
         
         score = model.score(pred_values, true_values)
         
         if max_score < score:
-            torch.save(model.state_dict(), f"models/best_epoch.pth")
+            torch.save(model.state_dict(), f"models/join/balance_data/best_epoch_tmp.pth")
             max_score = score
     
         print("Total loss: ", total_loss)
@@ -103,7 +117,7 @@ def train():
         print("Max score: ", max_score)
     
     
-    model.load_state_dict(torch.load('models/best_epoch.pth'))
+    model.load_state_dict(torch.load('models/join/balance_data/best_epoch_tmp.pth'))
     model.eval()
     predictions = []
     
@@ -112,18 +126,19 @@ def train():
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             img = batch['image'].to(device)
+            features = batch['feature'].to(device)
 
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, img=img)
-            predictions.extend(outputs.detach().cpu().numpy())
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, img=img, feature=features)
+            predictions += outputs.reshape(-1).detach().cpu().tolist()
     
     result_test = []
     predictions = np.array(predictions)
     for id, pred in zip(df_test['ID'].values, predictions):
-        result_test.append([id, 10**(-pred[0])*1e9]) 
+        result_test.append([id, 10**(-pred)*1e9]) 
     
     submission = pd.DataFrame(columns=['ID', 'IC50_nM'], data=result_test)
     
-    submission.to_csv("submission.csv", index=False)
+    submission.to_csv("submission/join/balance_data/submission.csv", index=False)
 
 if __name__ == '__main__':
     train()

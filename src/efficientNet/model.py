@@ -3,25 +3,43 @@ import torch.nn as nn
 from efficientnet_pytorch import EfficientNet
 from src.utils import *
 
+class RMSELoss(nn.Module):     
+    def __init__(self, eps=1e-6):         
+        super().__init__()         
+        self.mse = nn.MSELoss()         
+        self.eps = eps  
+
+    def forward(self,yhat,y):         
+        loss = torch.sqrt(self.mse(yhat,y) + self.eps)         
+        return loss
+
+
 class EfficientNetForIC50(nn.Module):
     def __init__(self):
         super(EfficientNetForIC50, self).__init__()
-        self.efficientnet = EfficientNet.from_pretrained('efficientnet-b7', weights_path="Efficientnet/efficientnet-b7-dcc49843.pth")
+        self.efficientnet = EfficientNet.from_pretrained('efficientnet-b5', weights_path="Efficientnet/efficientnet-b5-b6417697.pth")
                 
         self.downstream = nn.Sequential(
             nn.Flatten(),
             nn.Linear(self.efficientnet._fc.in_features, 100),
+            nn.BatchNorm1d(100),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(100, 1)
         )
-        
+
         self.criterion = nn.MSELoss()
         
     def forward(self, x):
         x = self.efficientnet.extract_features(x)
         x = self.efficientnet._avg_pooling(x)
         x = self.downstream(x)
+        return x
+
+    def extract_feature(self, x):
+        x = self.efficientnet.extract_features(x)
+        x = self.efficientnet._avg_pooling(x)
+
         return x
 
     def loss(self, output, target):

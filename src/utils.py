@@ -11,7 +11,6 @@ from rdkit.Chem.rdMolDescriptors import CalcRadiusOfGyration
 
 import numpy as np
 
-
 def read_data_train(path):
     train = pd.read_csv(path)
     data_train = pd.concat([train['Smiles'], train['IC50_nM'], train['pIC50']], axis=1)
@@ -68,33 +67,34 @@ def create_feature(sample):
     # Các chỉ số chi khác nhau (Chi0, Chi1, Chi2,...) đo lường các khía cạnh khác nhau của sự kết nối trong phân tử.
     chi0 = Descriptors.Chi0(mol)
 
-    # 3d vitualize
-    AllChem.EmbedMolecule(mol)
-    AllChem.UFFOptimizeMolecule(mol)
+    # # 3d vitualize
+    # AllChem.EmbedMolecule(mol)
+    # AllChem.UFFOptimizeMolecule(mol)
 
-    # Tính toán các mômen quán tính chính
-    pmi1 = CalcPMI1(mol)  # PMI theo trục 1
-    pmi2 = CalcPMI2(mol)  # PMI theo trục 2
-    pmi3 = CalcPMI3(mol)  # PMI theo trục 3
-    # print(f"pmi1: {pmi1}\npmi2: {pmi2}\npmi3: {pmi3}")
+    # # Tính toán các mômen quán tính chính
+    # pmi1 = CalcPMI1(mol)  # PMI theo trục 1
+    # pmi2 = CalcPMI2(mol)  # PMI theo trục 2
+    # pmi3 = CalcPMI3(mol)  # PMI theo trục 3
+    # # print(f"pmi1: {pmi1}\npmi2: {pmi2}\npmi3: {pmi3}")
 
-    # Tính toán chỉ số hình dạng
-    inertial_shape_factor = CalcInertialShapeFactor(mol)
-    # print("inertial shape factor", inertial_shape_factor)
+    # # Tính toán chỉ số hình dạng
+    # inertial_shape_factor = CalcInertialShapeFactor(mol)
+    # # print("inertial shape factor", inertial_shape_factor)
 
-    # Tính toán tỷ lệ mômen quán tính
-    pmi_ratio = CalcPBF(mol)  # Principal moments balance factor (PBF)
-    # print("Pmi ratio: ", pmi_ratio)
+    # # Tính toán tỷ lệ mômen quán tính
+    # pmi_ratio = CalcPBF(mol)  # Principal moments balance factor (PBF)
+    # # print("Pmi ratio: ", pmi_ratio)
 
-    # Tính bán kính quán tính
-    radius_of_gyration = CalcRadiusOfGyration(mol)
+    # # Tính bán kính quán tính
+    # radius_of_gyration = CalcRadiusOfGyration(mol)
     # print("Radius of gyration: ", radius_of_gyration)
     
     # # Tạo fingerprints từ SMILES
     # fingerprint = Chem.RDKFingerprint(mol, fpSize=128).ToList()
     
     # return [inertial_shape_factor, fraction_csp3, qed_value, balaban_j], [mol_weight, logp, tpsa, mol_refractivity, chi0, pmi1, pmi2, pmi3, pmi_ratio, radius_of_gyration, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds]
-    return [inertial_shape_factor, fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, pmi1, pmi2, pmi3, pmi_ratio, radius_of_gyration, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds]
+    # return [inertial_shape_factor, fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, pmi1, pmi2, pmi3, pmi_ratio, radius_of_gyration, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds]
+    return [fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds]
 
 
 def ic50_to_pic50(ic50):
@@ -112,3 +112,10 @@ def correct_ratio(pic50_true, pic50_pred):
     absolute_errors = np.abs(pic50_true - pic50_pred)
     correct_count = np.sum(absolute_errors <= 0.5)
     return correct_count / len(pic50_true)
+
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+def sigmoid_inverse(y):
+    return np.log(y / (1 - y))

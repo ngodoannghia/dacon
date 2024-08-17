@@ -23,13 +23,7 @@ class ChemBertIC50(nn.Module):
         self.chemBert = AutoModel.from_pretrained(model_path)
         
         self.downstream = nn.Sequential(
-            AttentionPooling(num_feature),
-            nn.ReLU(),
-            nn.Dropout(0.01),
-            nn.Flatten(),
-            nn.Linear(num_feature, 128),
-            nn.ReLU(),
-            nn.Dropout(0.01)
+            AttentionPooling(num_feature)
         )
 
     def forward(self, input_ids, attention_mask):
@@ -41,44 +35,67 @@ class ChemBertIC50(nn.Module):
 class EfficientNetIC50(nn.Module):
     def __init__(self):
         super(EfficientNetIC50, self).__init__()
-        self.efficientnet = EfficientNet.from_pretrained('efficientnet-b7', weights_path="Efficientnet/efficientnet-b7-dcc49843.pth")
-                
-        self.downstream = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(self.efficientnet._fc.in_features, 128),
-            nn.ReLU(),
-            nn.Dropout(0.01)
-        )
+        self.efficientnet = EfficientNet.from_pretrained('efficientnet-b5', weights_path="Efficientnet/efficientnet-b5-b6417697.pth")
         
     def forward(self, x):
         x = self.efficientnet.extract_features(x)
         x = self.efficientnet._avg_pooling(x)
-        x = self.downstream(x)
+
         return x
 
 class Join_ChemBert_EfficientNet(nn.Module):
-    def __init__(self):
+    def __init__(self, add_feature=True):
         super(Join_ChemBert_EfficientNet, self).__init__()
         
         self.chembert = ChemBertIC50(model_path="ChemBERTa-77M-MTR", num_feature=384)
         self.efficientnet = EfficientNetIC50()
+        self.add_feature = add_feature
         
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.01)
-        self.linear = nn.Linear(256, 1)
+        self.dropout = nn.Dropout(0.1)
+        self.batchnorm1d_1 = nn.BatchNorm1d(384 + self.efficientnet.efficientnet._fc.in_features)
+        self.batchnorm1d_2 = nn.BatchNorm1d(128)
+        self.linear_1 = nn.Linear(384 + self.efficientnet.efficientnet._fc.in_features, 128)
+        self.linear_2 = nn.Linear(128, 10)
         
+        if add_feature:
+            self.linear_3 = nn.Linear(10 + 13, 1)
+            self.batchnorm1d_3 = nn.BatchNorm1d(10)
+        else:
+            self.linear_3 = nn.Linear(10, 1)
+            self.batchnorm1d_3 = nn.BatchNorm1d(10)
+        
+        self.flatten = nn.Flatten()
+
         self.criterion = nn.MSELoss()
         
-    def forward(self, input_ids, attention_mask, img):
+    def forward(self, input_ids, attention_mask, img, feature):
         feat_chem = self.chembert(input_ids, attention_mask)
         feat_efficient = self.efficientnet(img)
+
+        feat_chem = self.flatten(feat_chem)
+        feat_efficient = self.flatten(feat_efficient)
         
         feat_all = torch.cat((feat_chem, feat_efficient), -1)       
         
-        output = self.relu(feat_all)
+        output = self.batchnorm1d_1(feat_all)
+        # output = self.relu(feat_all)
         output = self.dropout(output)
         
-        output = self.linear(output)
+        output = self.linear_1(output)
+
+        output = self.batchnorm1d_2(output)
+        # output = self.relu(output)
+        output = self.dropout(output)
+
+        output = self.linear_2(output)
+
+        output = self.batchnorm1d_3(output)
+
+        if self.add_feature:
+            output = torch.cat((output, feature), -1)
+
+        output = self.linear_3(output)
         
         return output
     
