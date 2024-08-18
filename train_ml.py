@@ -11,6 +11,7 @@ from rdkit.Chem.rdMolDescriptors import CalcRadiusOfGyration
 from sklearn.metrics import mean_squared_error, r2_score
 import pandas as pd
 from sklearn.preprocessing import RobustScaler, StandardScaler, MinMaxScaler
+from sklearn.model_selection import KFold
 
 import numpy as np
 
@@ -37,13 +38,13 @@ import torch
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 model_chemBert = IC50_Prediction_Model(model_path="ChemBERTa-77M-MTR", num_feature=384)
-model_chemBert.load_state_dict(torch.load('models/smiles/best_model_gen_500_val_100.pth'))
+# model_chemBert.load_state_dict(torch.load('models/train_10_all/best_epoch.pth'))
+model_chemBert.load_state_dict(torch.load('E://competition//atoms//models//best_epoch.pth'))
 model_chemBert.to("cuda")
 model_chemBert.eval()
-# model_chem_bert = AutoModelForMaskedLM.from_pretrained("ChemBERTa-zinc-base-v1")
 
 model_efficientnet = EfficientNetForIC50()
-model_efficientnet.load_state_dict(torch.load('models/images/best_model_gen_500_val_100.pth'))
+model_efficientnet.load_state_dict(torch.load('models/images/best_model_gen_10.pth'))
 model_efficientnet.to("cuda")
 model_efficientnet.eval()
 
@@ -117,8 +118,8 @@ def create_feature(sample, path):
     # print("Chi0: ", chi0)
 
     # 3d vitualize
-    # AllChem.EmbedMolecule(mol)
-    # AllChem.UFFOptimizeMolecule(mol)
+    AllChem.EmbedMolecule(mol)
+    AllChem.UFFOptimizeMolecule(mol)
 
     # # Tính toán các mômen quán tính chính
     # pmi1 = CalcPMI1(mol)  # PMI theo trục 1
@@ -127,15 +128,15 @@ def create_feature(sample, path):
     # # print(f"pmi1: {pmi1}\npmi2: {pmi2}\npmi3: {pmi3}")
 
     # # Tính toán chỉ số hình dạng
-    # inertial_shape_factor = CalcInertialShapeFactor(mol)
+    inertial_shape_factor = CalcInertialShapeFactor(mol)
     # # print("inertial shape factor", inertial_shape_factor)
 
     # # Tính toán tỷ lệ mômen quán tính
-    # pmi_ratio = CalcPBF(mol)  # Principal moments balance factor (PBF)
-    # # print("Pmi ratio: ", pmi_ratio)
+    pmi_ratio = CalcPBF(mol)  # Principal moments balance factor (PBF)
+    # print("Pmi ratio: ", pmi_ratio)
 
-    # # Tính bán kính quán tính
-    # radius_of_gyration = CalcRadiusOfGyration(mol)
+    # Tính bán kính quán tính
+    radius_of_gyration = CalcRadiusOfGyration(mol)
     # print("Radius of gyration: ", radius_of_gyration)
 
 
@@ -145,12 +146,14 @@ def create_feature(sample, path):
 
     features_efficient = create_feature_efficentnet(path).tolist()
 
-    print(f"Smile: {sample}: {len(features_chem)}")
+    # print(f"Smile: {sample}: {len(features_chem)}")
     
     # return [inertial_shape_factor, fraction_csp3, qed_value, balaban_j], [mol_weight, logp, tpsa, mol_refractivity, chi0, pmi1, pmi2, pmi3, pmi_ratio, radius_of_gyration, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds]
-    # return [inertial_shape_factor, fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, pmi1, pmi2, pmi3, pmi_ratio, radius_of_gyration, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds] + features_chem
+    # return [inertial_shape_factor, fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, pmi1, pmi2, pmi3, pmi_ratio, radius_of_gyration, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds] + fingerprint + features_chem
     # return [fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds]
-    return [fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds] + fingerprint + features_chem + features_efficient 
+    # return [fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds] + fingerprint + features_chem + features_efficient
+    # return [fraction_csp3, qed_value, balaban_j, mol_weight, logp, tpsa, mol_refractivity, chi0, num_aromatic_rings, num_h_donors, num_h_acceptors, num_rings, num_rotatable_bonds] + fingerprint
+    return [mol_weight, num_rotatable_bonds] + fingerprint + features_chem + features_efficient
 
 def create_feature_chembert(sample):
     inputs = model_chemBert.tokenizer.encode_plus(
@@ -167,7 +170,7 @@ def create_feature_chembert(sample):
         'attention_mask': torch.tensor(inputs['attention_mask'], dtype=torch.long).unsqueeze(0).to('cuda'),
     }
     with torch.no_grad():
-        features = model_chemBert.extract_feature(inputs_data['input_ids'], inputs_data['attention_mask']).squeeze()
+        features = model_chemBert(inputs_data['input_ids'], inputs_data['attention_mask']).reshape(-1)
     
     return features.cpu()
 
@@ -184,6 +187,12 @@ def read_data(path):
     data = pd.read_csv(path)
     
     return data
+
+def read_data_train(path):
+    train = pd.read_csv(path)
+    data_train = pd.concat([train['Path'], train['Smiles'], train['IC50_nM'], train['pIC50']], axis=1)
+    
+    return data_train
 
 
 def create_data_train(data_train):
@@ -223,11 +232,11 @@ def create_data_test(data_test):
 def create_model():
     # Các mô hình thành phần
     estimators = [
-        ('rf', RandomForestRegressor(n_estimators=100, random_state=42)),
+        # ('rf', RandomForestRegressor(n_estimators=100, random_state=42)),
         ('gb', GradientBoostingRegressor(n_estimators=100, random_state=42)),
-        ('svr', SVR()),
-        ('nn', MLPRegressor(hidden_layer_sizes=(50, 50), max_iter=20000)),
-        ('xgb1', XGBRegressor(n_estimators=100, max_depth=3, learning_rate=0.1)),
+        # ('svr', SVR()),
+        # ('nn', MLPRegressor(hidden_layer_sizes=(50, 50), max_iter=20000)),
+        ('sgb', XGBRegressor(n_estimators=100, max_depth=3, learning_rate=0.1))
     ]
     # Mô hình meta
     stacking_model = StackingRegressor(estimators=estimators, final_estimator=LinearRegression())
@@ -263,40 +272,69 @@ def create_df_feat(features):
     return df
 
 if __name__ == '__main__':
-    path_train = "data/train_10_image.csv"
-    path_val = "data/balance/val_image_500.csv"
+    # path_train = "data/train.csv"
+    path_train = "data/train_image.csv"
+    # path_val = "data/balance/val_image_500.csv"
     path_test = "data/test_image.csv"
     
-    data_train = read_data(path_train)
-    data_val = read_data(path_val)
+    data_train = read_data_train(path_train)
+    # data_val = read_data(path_val)
     data_test = read_data(path_test)
 
-    data_train_all = pd.concat([data_train, data_val])
+    # data_train_all = pd.concat([data_train, data_val])
+    data_train_all = data_train
     
-    model = create_model()
+    # model = create_model()
     # model = create_model_xgboots()
     # model = XGBRegressor(n_estimators=300, max_depth=5, learning_rate=0.1)
     # model = RandomForestRegressor(n_estimators=100, random_state=42)
     # scaler = StandardScaler()
-    scaler = RobustScaler()
+    model = XGBRegressor(n_estimators=100, max_depth=3, learning_rate=0.05)
+    # model = GradientBoostingRegressor(n_estimators=100, random_state=42)
+    # model = RandomForestRegressor(n_estimators=100, random_state=42)
+    # model = MLPRegressor(hidden_layer_sizes=(50, 50), max_iter=20000)
+    # model =  SVR()
+    # scaler = RobustScaler()
     # scaler = MinMaxScaler()
+    scaler = StandardScaler()
     
     features, labels = create_data_train(data_train_all)
+        
+    # Inference test
+    features_test = create_data_test(data_test)
     
     df = create_df_feat(features)
     df_scaled = pd.DataFrame(scaler.fit_transform(df), columns=df.columns)
     
     X_train, X_valid, y_train, y_valid = train_test_split(df_scaled.values, labels, test_size=0.1, random_state=42)
     
+    kf = KFold(n_splits=10, shuffle=True, random_state=42)
+    
     # Huấn luyện mô hình ensemble
     model.fit(X_train, y_train)
     
+    # df_train = df_scaled.values
+    # labels  = np.array(labels)
+    # count = 0
+    # for train_index, test_index in kf.split(df_train):
+    #     print("Count: ", count)
+    #     X_train, X_val = df_train[train_index], df_train[test_index]
+    #     y_train, y_val = labels[train_index], labels[test_index]
+        
+    #     # Huấn luyện mô hình trên tập huấn luyện
+    #     model.fit(X_train, y_train)
+        
     # Dự đoán trên tập kiểm tra
     y_pred = model.predict(X_valid)
     
-    # Inference test
-    features_test = create_data_test(data_test)
+    # Tính toán điểm số của mô hình
+    mse = mean_squared_error(y_valid, y_pred)
+    rmse = np.sqrt(mse)
+    r2 = r2_score(y_valid, y_pred)
     
+    print(f"Result: \nMSE: {mse}\nRMSE: {rmse}\nR2: {r2}")
+
+
     df_test = create_df_feat(features_test)
     
     df_test_scaled = pd.DataFrame(scaler.transform(df_test), columns=df_test.columns)
@@ -310,11 +348,5 @@ if __name__ == '__main__':
     
     submission = pd.DataFrame(columns=['ID', 'IC50_nM'], data=result_test)
     
-    submission.to_csv("ml_submission.csv", index=False)
+    submission.to_csv(f"ml_submission.csv", index=False)
     
-    # Tính toán điểm số của mô hình
-    mse = mean_squared_error(y_valid, y_pred)
-    rmse = np.sqrt(mse)
-    r2 = r2_score(y_valid, y_pred)
-    
-    print(f"Result: \nMSE: {mse}\nRMSE: {rmse}\nR2: {r2}")

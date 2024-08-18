@@ -38,15 +38,18 @@ def train():
     scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
     
     # Init dataset    
-    df_train = pd.read_csv("data/data_split_val/train_image.csv")
-    df_val = pd.read_csv("data/data_split_val/val_image.csv")
+    df_train = pd.read_csv("data/train_10_image.csv")
+    # df_val = pd.read_csv("data/data_split_val/val_image.csv")
     df_test = pd.read_csv("data/test_image.csv")
 
     
-    # X_train, X_val = train_test_split(df_train, test_size=0.1, random_state=42)
+    X_train, X_val = train_test_split(df_train, test_size=0.1, random_state=42)
     
-    # X_train.reset_index(inplace=True)
-    # X_val.reset_index(inplace=True)
+    X_train.reset_index(inplace=True)
+    X_val.reset_index(inplace=True)
+    
+    df_train = X_train
+    df_val = X_val
 
     train_dataset = SMILESDataset(df_train)
     val_dataset = SMILESDataset(df_val)
@@ -99,14 +102,14 @@ def train():
         score = model.score(pred_values, true_values)
         
         if max_score < score:
-            torch.save(model.state_dict(), f"models/images/best_model_gen_500_val_100.pth")
+            torch.save(model.state_dict(), f"models/images/best_model_10.pth")
             max_score = score
     
         print("Total loss: ", total_loss)
         print("Score: ", score)
         print("Max score: ", max_score)
     
-    model.load_state_dict(torch.load('models/images/best_model_gen_500_val_100.pth'))
+    model.load_state_dict(torch.load('models/images/best_model_gen_10.pth'))
     model.eval() 
     predictions = []
     
@@ -125,7 +128,7 @@ def train():
     
     submission = pd.DataFrame(columns=['ID', 'IC50_nM'], data=result_test)
     
-    submission.to_csv("submission_best_model_gen_500_val_100.csv", index=False)
+    submission.to_csv("submission_best_model_10.csv", index=False)
 
 
 if __name__ == '__main__':
